@@ -112,6 +112,56 @@ def do_iptables(port, dnsport, subnets):
                     '--dport', '53',
                     '--to-ports', str(dnsport))
 
+def pfctl(*arg):
+    argv = ['sudo', 'pfctl']
+    argv.extend(arg)
+    p = ssubprocess.Popen(argv,
+        stdout = ssubprocess.PIPE,
+        stderr = ssubprocess.PIPE)
+    return p.wait()
+
+def do_pf(port, dnsport, subnets):
+    exclude_set = []
+    redirect_set = []
+    ns_set = []
+
+    if dnsport:
+        nslist = resolvconf_nameservers()
+        for ip in nslist:
+            ns_set.append(ip)
+
+    if subnets:
+        for swidth,sexclude,snet in sorted(subnets, reverse=True):
+            if sexclude:
+                exclude_set.append("%s/%s" % (snet,swidth))
+            else:
+                redirect_set.append("%s/%s" % (snet,swidth))
+
+        ruleset = [
+            'packets = "proto tcp to {%s}"' % ','.join(redirect_set),
+            'rdr pass on lo0 $packets -> 127.0.0.1 port %s' % port,
+            'pass out route-to lo0 inet $packets keep state'
+            ]
+
+        if len(ns_set) > 0:
+            ns_ruleset = [
+                    'dnspackets = "proto udp to {%s} port 53"' % ','.join(ns_set),
+                    'rdr pass on lo0 $dnspackets -> 127.0.0.1 port %s' % port,
+                    'pass out route-to lo0 inet $dnspackets keep state'
+                ]
+            ruleset = list(sum(zip(ruleset, ns_ruleset), ()))
+
+        if len(exclude_set) > 0:
+            ruleset.append('pass out quick proto tcp to {%s}' % ','.join(exclude_set))
+
+        f = open('/etc/sshuttle.pf.conf', 'w+')
+        f.write('\n'.join(ruleset) + '\n')
+        f.close()
+
+        pfctl('-f', '/etc/sshuttle.pf.conf', '-E')
+    else:
+        pfctl('-d')
+        pfctl('-F', 'all')
 
 def ipfw_rule_exists(n):
     argv = ['ipfw', 'list']
@@ -464,6 +514,8 @@ def main(port, dnsport, syslog):
         do_it = do_ipfw
     elif program_exists('iptables'):
         do_it = do_iptables
+    elif program_exists('pfctl'):
+        do_it = do_pf
     else:
         raise Fatal("can't find either ipfw or iptables; check your PATH")
 
