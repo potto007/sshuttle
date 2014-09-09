@@ -13,5 +13,5 @@ fi
 printf "\n"
 gcc $ARCHES \
 	-Wall -o $3 runpython.c \
-	-I/usr/include/python2.5 \
-	-lpython2.5
+	-I/usr/include/python2.7 \
+	-lpython2.7
