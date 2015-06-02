@@ -1,6 +1,7 @@
 *.pyc
 *~
 *.8
+*.log
 /.do_built
 /.do_built.dir
 /.redo
